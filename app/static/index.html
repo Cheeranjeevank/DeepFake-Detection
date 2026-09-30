@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepGuard — Deepfake Detection</title>
+  <meta name="description" content="AI-powered deepfake detection using EfficientNet-B0. Analyze images and videos for authenticity with Grad-CAM explainability." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════ -->
+<nav class="navbar" id="navbar">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand" id="nav-brand-btn">
+      <span class="nav-icon">🛡️</span>
+      <span>DeepGuard</span>
+    </a>
+    <div class="nav-links">
+      <button class="nav-btn" id="navHomeBtn">Home</button>
+      <button class="nav-btn" id="navImageBtn">Image</button>
+      <button class="nav-btn" id="navVideoBtn">Video</button>
+    </div>
+    <div class="nav-status" id="navStatus">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Connecting…</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════ PAGES ════════════════════════════════ -->
+<main>
+
+  <!-- ── HOME PAGE ── -->
+  <section class="page active" id="page-home">
+    <div class="hero">
+      <img src="/static/hero.jpg" alt="DeepGuard AI banner" class="hero-img" />
+      <div class="hero-overlay">
+        <div class="hero-content">
+          <div class="hero-badge">AI-Powered Detection</div>
+          <h1 class="hero-title">DeepGuard</h1>
+          <p class="hero-subtitle">Advanced deepfake detection powered by EfficientNet-B0 and Grad-CAM explainability</p>
+          <div class="hero-btns">
+            <button class="btn btn-primary" id="heroImageBtn">Analyze Image</button>
+            <button class="btn btn-outline" id="heroVideoBtn">Analyze Video</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container section">
+      <div class="section-label">How it works</div>
+      <h2 class="section-title">Three-step verification pipeline</h2>
+      <div class="cards-grid">
+        <div class="card card-glow">
+          <div class="card-icon">🔬</div>
+          <h3>Face Detection</h3>
+          <p>MTCNN precisely locates and crops faces from your image or video frames.</p>
+        </div>
+        <div class="card card-glow">
+          <div class="card-icon">🧠</div>
+          <h3>Deep Analysis</h3>
+          <p>EfficientNet-B0 (pretrained on ImageNet) classifies each face as REAL or DEEPFAKE.</p>
+        </div>
+        <div class="card card-glow">
+          <div class="card-icon">🔍</div>
+          <h3>Explainability</h3>
+          <p>Grad-CAM heatmaps highlight the exact regions that influenced the model's decision.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="container section">
+      <div class="section-label">Capabilities</div>
+      <h2 class="section-title">What DeepGuard can do</h2>
+      <div class="features-grid">
+        <div class="feature">
+          <span class="feature-icon">🖼️</span>
+          <div>
+            <h4>Image Detection</h4>
+            <p>Upload any JPG/PNG and get an instant REAL/DEEPFAKE verdict with confidence score.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🎥</span>
+          <div>
+            <h4>Video Analysis</h4>
+            <p>Samples up to 20 evenly-spaced frames, analyzes each face, and aggregates predictions.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">📊</span>
+          <div>
+            <h4>Probability Scores</h4>
+            <p>Granular real and fake probability bars, not just binary labels.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">⚡</span>
+          <div>
+            <h4>Hardware Acceleration</h4>
+            <p>Automatically uses CUDA, MPS (Apple Silicon), or CPU — whichever is fastest.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="disclaimer container">
+      ⚠️ <strong>Disclaimer:</strong> DeepGuard provides an AI-based estimate and should not be treated as definitive forensic evidence. Results may vary depending on compression, lighting, and manipulation techniques.
+    </div>
+  </section>
+
+  <!-- ── IMAGE DETECTION PAGE ── -->
+  <section class="page" id="page-image">
+    <div class="container section">
+      <div class="section-label">Image Analysis</div>
+      <h2 class="section-title">Detect deepfakes in images</h2>
+      <p class="section-desc">Upload a JPG, JPEG, or PNG image. The model will detect faces and classify the image as REAL or DEEPFAKE.</p>
+
+      <div class="upload-zone" id="imageDropZone">
+        <input type="file" id="imageFileInput" accept=".jpg,.jpeg,.png" hidden />
+        <div class="upload-icon">📸</div>
+        <p class="upload-title">Drop your image here</p>
+        <p class="upload-hint">or click to browse — JPG, JPEG, PNG</p>
+        <button class="btn btn-primary" id="imageBrowseBtn" type="button">Choose Image</button>
+      </div>
+
+      <div class="preview-row" id="imagePreviewRow" style="display:none">
+        <div class="preview-box">
+          <h3 class="box-label">Uploaded Image</h3>
+          <img id="imagePreview" alt="Uploaded image" />
+        </div>
+      </div>
+
+      <div class="analyze-row" id="imageAnalyzeRow" style="display:none">
+        <button class="btn btn-primary btn-lg" id="imageAnalyzeBtn">
+          <span id="imageAnalyzeBtnText">🔍 Analyze Image</span>
+          <span id="imageAnalyzeSpinner" class="spinner" style="display:none"></span>
+        </button>
+      </div>
+
+      <div id="imageResults" style="display:none">
+        <div class="result-card" id="imageResultCard">
+          <div class="result-verdict" id="imageVerdict"></div>
+          <div class="result-confidence" id="imageConfidence"></div>
+          <div class="prob-bars">
+            <div class="prob-row">
+              <span class="prob-label">✅ Real</span>
+              <div class="prob-track">
+                <div class="prob-fill prob-real" id="imageRealBar"></div>
+              </div>
+              <span class="prob-value" id="imageRealVal"></span>
+            </div>
+            <div class="prob-row">
+              <span class="prob-label">🚨 Fake</span>
+              <div class="prob-track">
+                <div class="prob-fill prob-fake" id="imageFakeBar"></div>
+              </div>
+              <span class="prob-value" id="imageFakeVal"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="explainability-row" id="imageExplainRow" style="display:none">
+          <div class="preview-box">
+            <h3 class="box-label">Detected Face</h3>
+            <img id="imageFaceCrop" alt="Detected face" />
+          </div>
+          <div class="preview-box">
+            <h3 class="box-label">Grad-CAM Heatmap</h3>
+            <img id="imageHeatmap" alt="Grad-CAM heatmap" />
+            <p class="hint-text">Highlighted regions influenced the prediction</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="imageError" class="error-box" style="display:none"></div>
+    </div>
+  </section>
+
+  <!-- ── VIDEO DETECTION PAGE ── -->
+  <section class="page" id="page-video">
+    <div class="container section">
+      <div class="section-label">Video Analysis</div>
+      <h2 class="section-title">Detect deepfakes in videos</h2>
+      <p class="section-desc">Upload an MP4, AVI, or MOV file. DeepGuard samples 20 evenly-spaced frames and aggregates predictions.</p>
+
+      <div class="upload-zone" id="videoDropZone">
+        <input type="file" id="videoFileInput" accept=".mp4,.avi,.mov" hidden />
+        <div class="upload-icon">🎬</div>
+        <p class="upload-title">Drop your video here</p>
+        <p class="upload-hint">or click to browse — MP4, AVI, MOV</p>
+        <button class="btn btn-primary" id="videoBrowseBtn" type="button">Choose Video</button>
+      </div>
+
+      <div class="preview-row" id="videoPreviewRow" style="display:none">
+        <div class="preview-box preview-box-wide">
+          <h3 class="box-label">Selected Video</h3>
+          <video id="videoPreview" controls></video>
+        </div>
+      </div>
+
+      <div class="analyze-row" id="videoAnalyzeRow" style="display:none">
+        <button class="btn btn-primary btn-lg" id="videoAnalyzeBtn">
+          <span id="videoAnalyzeBtnText">🔍 Analyze Video</span>
+          <span id="videoAnalyzeSpinner" class="spinner" style="display:none"></span>
+        </button>
+        <p class="hint-text">This may take 30–60 seconds depending on your hardware.</p>
+      </div>
+
+      <div id="videoResults" style="display:none">
+        <div class="result-card" id="videoResultCard">
+          <div class="result-verdict" id="videoVerdict"></div>
+          <div class="result-confidence" id="videoConfidence"></div>
+          <div class="video-stats" id="videoStats"></div>
+          <div class="prob-bars">
+            <div class="prob-row">
+              <span class="prob-label">✅ Real</span>
+              <div class="prob-track">
+                <div class="prob-fill prob-real" id="videoRealBar"></div>
+              </div>
+              <span class="prob-value" id="videoRealVal"></span>
+            </div>
+            <div class="prob-row">
+              <span class="prob-label">🚨 Fake</span>
+              <div class="prob-track">
+                <div class="prob-fill prob-fake" id="videoFakeBar"></div>
+              </div>
+              <span class="prob-value" id="videoFakeVal"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="videoFramesSection">
+          <h3 class="subsection-title">Frame-Level Analysis</h3>
+          <div class="table-wrapper">
+            <table class="frame-table" id="frameTable">
+              <thead>
+                <tr>
+                  <th>Frame #</th>
+                  <th>Timestamp</th>
+                  <th>Prediction</th>
+                  <th>Real %</th>
+                  <th>Fake %</th>
+                </tr>
+              </thead>
+              <tbody id="frameTableBody"></tbody>
+            </table>
+          </div>
+
+          <div id="suspiciousFramesSection" style="display:none">
+            <h3 class="subsection-title">Suspicious Frames</h3>
+            <div class="suspicious-grid" id="suspiciousGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="videoError" class="error-box" style="display:none"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ════════════════════════════════ FOOTER ═════════════════════════════ -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>🛡️ <strong>DeepGuard</strong> — AI-Powered Deepfake Detection</span>
+    <span>EfficientNet-B0 · Grad-CAM · FastAPI · PyTorch</span>
+  </div>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

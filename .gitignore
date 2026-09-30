@@ -1,0 +1,49 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights (large binaries — keep out of git)
+models/checkpoints/
+models/*.pth
+models/*.pt
+*.pth
+*.pt
+
+# Data (download separately)
+data/raw/
+data/processed/
+
+# Outputs
+outputs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Streamlit
+.streamlit/
+
+# Env files
+.env
+.env.local
