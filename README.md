@@ -1,113 +1,153 @@
-# DeepGuard — Deep Learning-Based Deepfake Detection System
+# 🛡️ DeepGuard — Deepfake Detection System
 
-## 1. Project Title
-DeepGuard — Deep Learning-Based Deepfake Detection System
+An AI-powered deepfake detection web application using **EfficientNet-B0**, **MTCNN** face detection, and **Grad-CAM** explainability — wrapped in a modern dark-mode HTML/CSS/JS frontend powered by a **FastAPI** backend.
 
-## 2. Problem Statement
-With the rise of sophisticated AI models, generating highly realistic fake images and videos (deepfakes) has become easier than ever. These deepfakes pose significant threats to society, including misinformation, identity theft, and fraud. A reliable and automated system is required to accurately detect deepfakes to mitigate these risks.
+---
 
-## 3. Motivation
-As an AI and Data Science student, tackling real-world problems using computer vision and deep learning is a core interest. Building an end-to-end deepfake detection system demonstrates a comprehensive understanding of dataset processing, transfer learning, inference optimization, and model explainability.
+## 🚀 Quick Start (any system)
 
-## 4. Objectives
-- Detect faces in images and videos.
-- Preprocess images for neural network compatibility.
-- Classify visual media as REAL or DEEPFAKE using a deep learning model.
-- Provide a confidence score for predictions.
-- Offer visual explainability using Grad-CAM.
-- Deploy the solution in a modern, user-friendly Streamlit web interface.
-
-## 5. Features
-- **Image Detection**: Predict whether an uploaded image is real or manipulated.
-- **Video Detection**: Sample frames from videos, analyze them, and aggregate predictions to classify the entire video.
-- **Visual Explainability**: Display Grad-CAM heatmaps to highlight regions that contributed to the model's decision.
-- **Hardware Acceleration**: Automatic fallback across CUDA, MPS (Apple Silicon), and CPU.
-
-## 6. System Architecture
-1. **Video Frame Extraction**: Extract a configurable number of frames from input videos.
-2. **Face Detection**: Localize and crop faces using MTCNN.
-3. **Preprocessing**: Resize faces to 224x224 and normalize using ImageNet statistics.
-4. **Model Inference**: Pass preprocessed faces through a fine-tuned EfficientNet-B0 backbone.
-5. **Aggregation (for videos)**: Average the prediction probabilities across sampled frames.
-6. **Explainability**: Generate Grad-CAM heatmaps for specific frames/images.
-7. **Streamlit UI**: Display results, confidence scores, and visual explanations in an interactive dashboard.
-
-## 7. Technologies
-- **Python 3.11+**
-- **Deep Learning**: PyTorch, torchvision
-- **Computer Vision**: OpenCV, Pillow, facenet-pytorch (MTCNN)
-- **Data Science**: NumPy, Pandas, scikit-learn, Matplotlib, Seaborn
-- **Explainability**: Grad-CAM
-- **Web App**: Streamlit
-
-## 8. Dataset
-This project is designed to be trained on datasets like **FaceForensics++** or **Celeb-DF**.
-*Note: Datasets must be downloaded independently and placed in the `data/raw` directory.*
-
-## 9. Dataset Preparation
-The dataset preparation pipeline involves:
-1. Video level splitting into train, validation, and test sets to prevent data leakage.
-2. Frame extraction.
-3. Face detection and cropping.
-4. Image normalization and resizing.
-
-## 10. Model Architecture
-- **Backbone**: EfficientNet-B0 (pretrained on ImageNet).
-- **Head**: Custom fully connected layers modified for binary classification (REAL vs. DEEPFAKE).
-- **Transfer Learning**: The backbone is initially frozen to train the classifier head, followed by potential fine-tuning.
-
-## 11. Training Process
-- Optimizer: AdamW
-- Loss Function: CrossEntropyLoss
-- Callbacks: Early Stopping, Model Checkpointing
-- Imbalance handling: Weighted loss or WeightedRandomSampler.
-
-## 12. Evaluation
-Evaluated on an unseen test set using Accuracy, Precision, Recall, F1-score, and ROC-AUC.
-
-## 13. Results
-*To be added after training.*
-
-## 14. Explainability
-Uses **Grad-CAM** to highlight the regions (e.g., artifacts around the mouth or eyes) that the model focused on to make its prediction. This is an estimate and not definitive forensic proof.
-
-## 15. Streamlit Application
-A modern dashboard allowing users to upload media, view results, explore frame-by-frame analyses for videos, and understand the model architecture.
-
-## 16. Installation
 ```bash
-# Create virtual environment
+# 1. Clone the repo
+git clone https://github.com/Cheeranjeevank/DeepFake-Detection.git
+cd DeepFake-Detection
+
+# 2. Run (auto-downloads model weights + creates venv on first run)
+chmod +x run_web.sh
+./run_web.sh
+
+# 3. Open in browser
+#    http://localhost:8000
+```
+
+> **`run_web.sh` does everything automatically:**  
+> ✅ Downloads the trained model weights from GitHub Releases (16 MB)  
+> ✅ Creates a Python virtual environment  
+> ✅ Installs all dependencies  
+> ✅ Starts the web server  
+
+---
+
+## 📋 Requirements
+
+| Requirement | Version |
+|---|---|
+| Python | 3.10+ |
+| pip | any recent |
+| curl or wget | pre-installed on macOS/Linux |
+| RAM | ≥ 4 GB |
+| GPU | Optional (CUDA/MPS) — CPU works fine |
+
+> **Windows users:** Run the manual steps below instead of `run_web.sh`
+
+---
+
+## 🖥️ Manual Setup (Windows / advanced)
+
+```bash
+# Create & activate virtual environment
 python -m venv .venv
 
-# Activate virtual environment
 # macOS / Linux
 source .venv/bin/activate
+
 # Windows
-# .venv\Scripts\activate
+.venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Download model weights
+mkdir models
+curl -L -o models/best_model.pth \
+  https://github.com/Cheeranjeevank/DeepFake-Detection/releases/download/v1.0.0/best_model.pth
+
+# Start the server
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Open http://localhost:8000
 ```
 
-## 17. Usage
-*Usage instructions will be added once scripts are implemented.*
+---
 
-## 18. Project Structure
-*(To be detailed)*
+## ✨ Features
 
-## 19. Limitations
-- **Dataset Bias**: The model may not generalize to unseen manipulation techniques.
-- **Compression Artifacts**: Heavy compression on social media might degrade performance.
-- Not intended as definitive forensic evidence.
+| Feature | Details |
+|---|---|
+| 🖼️ **Image Detection** | Upload JPG/PNG → instant REAL/DEEPFAKE verdict |
+| 🎥 **Video Analysis** | Samples 20 frames → per-frame results + aggregate |
+| 🔍 **Grad-CAM Heatmaps** | Highlights which face regions triggered the prediction |
+| 📊 **Probability Bars** | Granular real vs fake probabilities |
+| ⚠️ **No-face Fallback** | Falls back to center-crop if no face is detected |
+| ⚡ **Hardware Auto-detect** | Uses CUDA → MPS (Apple Silicon) → CPU automatically |
 
-## 20. Future Improvements
-- Implement temporal analysis (e.g., LSTM/Transformer) for video sequences.
-- Enhance robustness against adversarial attacks.
+---
 
-## 21. Ethical Considerations
-This project is an **educational deepfake detection system for research and demonstration**. It should not be treated as providing forensic certainty. We acknowledge the potential for false positives/negatives and the importance of responsible use.
+## 🏗️ System Architecture
 
-## 22. References
-- EfficientNet Paper
-- Grad-CAM Paper
-- FaceForensics++ Dataset
+```
+Browser (HTML/CSS/JS)
+        │  upload image/video
+        ▼
+FastAPI Backend (app/main.py)
+        │
+        ├── FaceDetector (MTCNN on CPU)
+        │       └── detect & crop face
+        ├── DeepfakeClassifier (EfficientNet-B0 on GPU/CPU)
+        │       └── REAL / DEEPFAKE + probabilities
+        └── GradCAMExplainer
+                └── heatmap overlaid on face crop
+```
+
+---
+
+## 📁 Project Structure
+
+```
+DeepFake-Detection/
+├── app/
+│   ├── main.py              ← FastAPI backend (REST API)
+│   ├── streamlit_app.py     ← Original Streamlit UI (legacy)
+│   └── static/
+│       ├── index.html       ← Frontend
+│       ├── style.css        ← Dark-mode design system
+│       └── app.js           ← Upload, results, heatmap logic
+├── src/
+│   ├── model.py             ← EfficientNet-B0 classifier
+│   ├── face_detection.py    ← MTCNN face detector
+│   ├── inference.py         ← Image predictor
+│   ├── video_processor.py   ← Video frame sampler
+│   ├── explainability.py    ← Grad-CAM heatmap generator
+│   ├── train.py             ← Training pipeline
+│   ├── evaluate.py          ← Evaluation metrics
+│   └── preprocessing.py     ← Transforms
+├── models/
+│   └── best_model.pth       ← ⬇️ Auto-downloaded by run_web.sh
+├── config.yaml              ← All hyperparameters
+├── requirements.txt         ← Python dependencies
+└── run_web.sh               ← One-command launcher
+```
+
+---
+
+## 🧠 Model Details
+
+- **Backbone**: EfficientNet-B0 (pretrained on ImageNet)
+- **Head**: Dropout(0.3) → Linear(1280 → 2)
+- **Training**: AdamW, CrossEntropyLoss, Early Stopping
+- **Input**: 224×224 RGB, ImageNet normalization
+- **Classes**: `REAL` (0), `DEEPFAKE` (1)
+- **Dataset**: Designed for FaceForensics++ / Celeb-DF / Real-vs-Fake
+
+---
+
+## ⚠️ Disclaimer
+
+DeepGuard is an **educational research project**. It provides AI-based estimates and should **not** be treated as definitive forensic evidence. Results may vary based on image compression, lighting, and manipulation technique.
+
+---
+
+## 📄 References
+
+- [EfficientNet: Rethinking Model Scaling for CNNs](https://arxiv.org/abs/1905.11946)
+- [Grad-CAM: Visual Explanations from Deep Networks](https://arxiv.org/abs/1610.02391)
+- [FaceForensics++ Dataset](https://github.com/ondyari/FaceForensics)
