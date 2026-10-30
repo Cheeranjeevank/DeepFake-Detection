@@ -3,275 +3,561 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DeepGuard — Deepfake Detection</title>
-  <meta name="description" content="AI-powered deepfake detection using EfficientNet-B0. Analyze images and videos for authenticity with Grad-CAM explainability." />
+  <title>DeepGuard — Real-Time AI Deepfake Detector</title>
+  <meta name="description" content="Real-time deepfake detection powered by InceptionNet+GRU AI. Detect whether a face is AI-generated or real." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #080c14;
+      --bg2: #0d1220;
+      --surface: rgba(255,255,255,0.04);
+      --border: rgba(255,255,255,0.08);
+      --accent: #7c3aed;
+      --accent2: #a78bfa;
+      --accent3: #4f46e5;
+      --real: #10b981;
+      --fake: #ef4444;
+      --warn: #f59e0b;
+      --text: #f1f5f9;
+      --muted: #64748b;
+      --radius: 16px;
+    }
+
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+    /* Background orbs */
+    .bg-orbs { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.18; animation: drift 14s ease-in-out infinite alternate; }
+    .orb1 { width: 600px; height: 600px; background: #7c3aed; top: -200px; left: -200px; }
+    .orb2 { width: 500px; height: 500px; background: #4f46e5; bottom: -150px; right: -150px; animation-delay: -7s; }
+    .orb3 { width: 350px; height: 350px; background: #0ea5e9; top: 40%; left: 50%; animation-delay: -3s; }
+    @keyframes drift { 0% { transform: translate(0,0) scale(1); } 100% { transform: translate(30px,20px) scale(1.05); } }
+
+    .container { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
+
+    /* Header */
+    header { text-align: center; padding: 60px 0 40px; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.35); padding: 6px 16px; border-radius: 100px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent2); margin-bottom: 20px; }
+    .badge-dot { width: 7px; height: 7px; background: var(--accent2); border-radius: 50%; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.5; transform:scale(0.8); } }
+    h1 { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800; line-height: 1.1; background: linear-gradient(135deg, #fff 40%, var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 16px; }
+    .subtitle { font-size: 1.05rem; color: var(--muted); max-width: 540px; margin: 0 auto; line-height: 1.6; }
+    .model-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; font-size: 13px; color: var(--muted); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 8px var(--warn); transition: all 0.5s; }
+    .status-dot.ok { background: var(--real); box-shadow: 0 0 8px var(--real); }
+    .status-dot.err { background: var(--fake); box-shadow: 0 0 8px var(--fake); }
+
+    /* Tabs */
+    .tabs { display: flex; justify-content: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 100px; padding: 6px; width: fit-content; margin: 32px auto 40px; }
+    .tab-btn { padding: 10px 28px; border-radius: 100px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; font-family: inherit; transition: all 0.25s; background: transparent; color: var(--muted); }
+    .tab-btn.active { background: linear-gradient(135deg, var(--accent), var(--accent3)); color: white; box-shadow: 0 4px 16px rgba(124,58,237,0.4); }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* Card */
+    .card { background: var(--surface); border: 1px solid var(--border); backdrop-filter: blur(20px); border-radius: var(--radius); padding: 32px; }
+    .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 700px) { .card-grid { grid-template-columns: 1fr; } }
+
+    /* Upload zone */
+    .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius); padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.25s; position: relative; overflow: hidden; }
+    .upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(124,58,237,0.07); }
+    .upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+    .upload-icon { font-size: 3rem; margin-bottom: 12px; }
+    .upload-zone p { color: var(--muted); font-size: 14px; margin-top: 8px; }
+    .upload-zone strong { color: var(--text); }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 28px; border-radius: 12px; border: none; cursor: pointer; font-size: 15px; font-weight: 600; font-family: inherit; transition: all 0.2s; text-decoration: none; }
+    .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent3)); color: white; box-shadow: 0 4px 20px rgba(124,58,237,0.4); width: 100%; margin-top: 16px; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(124,58,237,0.5); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; box-shadow: 0 4px 16px rgba(239,68,68,0.35); }
+    .btn-stop { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; padding: 12px 24px; border-radius: 12px; font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer; transition: all 0.2s; }
+    .btn-stop:hover { background: rgba(239,68,68,0.25); }
+
+    /* Video / Webcam */
+    .video-preview { width: 100%; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; }
+    .video-preview video, .video-preview img { width: 100%; height: 100%; object-fit: contain; }
+    .webcam-wrapper { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 4/3; }
+    #webcam-video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+    .webcam-overlay { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
+    .face-badge { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 100px; backdrop-filter: blur(10px); }
+    .face-badge.detected { background: rgba(16,185,129,0.2); color: var(--real); border: 1px solid rgba(16,185,129,0.3); }
+    .face-badge.none { background: rgba(239,68,68,0.2); color: var(--fake); border: 1px solid rgba(239,68,68,0.3); }
+    .buffer-ring { width: 48px; height: 48px; }
+    .buffer-ring svg { transform: rotate(-90deg); }
+    .buffer-ring circle { fill: none; stroke-width: 4; }
+    .buffer-bg { stroke: rgba(255,255,255,0.1); }
+    .buffer-fg { stroke: var(--accent2); stroke-linecap: round; transition: stroke-dashoffset 0.4s; }
+    .webcam-placeholder { width: 100%; aspect-ratio: 4/3; border-radius: var(--radius); background: var(--bg2); border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--muted); font-size: 14px; }
+    .webcam-placeholder .icon { font-size: 3rem; }
+
+    /* Result card */
+    .result-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; text-align: center; transition: all 0.4s; }
+    .result-card.is-real { border-color: var(--real); background: rgba(16,185,129,0.05); }
+    .result-card.is-fake { border-color: var(--fake); background: rgba(239,68,68,0.05); }
+    .result-card.is-analyzing { border-color: var(--warn); background: rgba(245,158,11,0.05); }
+    .result-label { font-size: 3rem; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 6px; transition: color 0.4s; }
+    .result-label.real { color: var(--real); }
+    .result-label.fake { color: var(--fake); }
+    .result-label.analyzing { color: var(--warn); }
+    .result-confidence { font-size: 14px; color: var(--muted); margin-bottom: 16px; }
+    .conf-bar-wrap { height: 6px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
+    .conf-bar { height: 100%; border-radius: 99px; transition: width 0.6s ease, background 0.4s; }
+    .conf-bar.real { background: var(--real); }
+    .conf-bar.fake { background: var(--fake); }
+    .conf-bar.analyzing { background: var(--warn); }
+    .result-meta { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .meta-pill { font-size: 12px; padding: 4px 12px; border-radius: 100px; background: rgba(255,255,255,0.06); color: var(--muted); }
+
+    /* Face crop preview */
+    .face-crop-img { width: 100%; max-width: 200px; border-radius: 12px; margin-top: 16px; border: 2px solid var(--border); display: block; margin-left: auto; margin-right: auto; }
+
+    /* Info grid */
+    .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 40px; }
+    @media (max-width: 700px) { .info-grid { grid-template-columns: 1fr; } }
+    .info-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+    .info-item .icon { font-size: 1.8rem; margin-bottom: 8px; }
+    .info-item h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .info-item p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════ -->
-<nav class="navbar" id="navbar">
-  <div class="nav-inner">
-    <a href="#" class="nav-brand" id="nav-brand-btn">
-      <span class="nav-icon">🛡️</span>
-      <span>DeepGuard</span>
-    </a>
-    <div class="nav-links">
-      <button class="nav-btn" id="navHomeBtn">Home</button>
-      <button class="nav-btn" id="navImageBtn">Image</button>
-      <button class="nav-btn" id="navVideoBtn">Video</button>
+<div class="bg-orbs">
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div class="badge"><span class="badge-dot"></span>Real-Time AI Detection</div>
+    <h1>DeepGuard</h1>
+    <p class="subtitle">AI-powered deepfake detection using InceptionNet + GRU. Analyze videos or use your live webcam to detect AI-generated faces.</p>
+    <div class="model-status">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Checking model…</span>
     </div>
-    <div class="nav-status" id="navStatus">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">Connecting…</span>
+  </header>
+
+  <!-- Tabs -->
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" id="tab-realtime" onclick="switchTab('realtime')" role="tab">📷 Real-Time Camera</button>
+    <button class="tab-btn" id="tab-image" onclick="switchTab('image')" role="tab">🖼️ Upload Image</button>
+    <button class="tab-btn" id="tab-video" onclick="switchTab('video')" role="tab">🎬 Upload Video</button>
+  </div>
+
+  <!-- ══ REAL-TIME PANEL ══════════════════════════════════════════════ -->
+  <div class="panel active" id="panel-realtime">
+    <div class="card-grid">
+      <!-- Left: webcam -->
+      <div>
+        <p class="section-label">Webcam Feed</p>
+        <div class="webcam-placeholder" id="wc-placeholder">
+          <div class="icon">📷</div>
+          <p>Click <strong>Start Camera</strong> to begin live analysis</p>
+        </div>
+        <div class="webcam-wrapper" id="wc-wrapper" style="display:none;">
+          <video id="webcam-video" autoplay playsinline muted></video>
+          <div class="webcam-overlay">
+            <span class="face-badge none" id="face-badge">No Face</span>
+            <div class="buffer-ring" title="Buffer progress">
+              <svg viewBox="0 0 48 48" width="48" height="48">
+                <circle class="buffer-bg" cx="24" cy="24" r="20"/>
+                <circle class="buffer-fg" id="buffer-arc" cx="24" cy="24" r="20"
+                  stroke-dasharray="125.66" stroke-dashoffset="125.66"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:14px;">
+          <button class="btn btn-primary" id="btn-start" onclick="startCamera()" style="margin-top:0; flex:1;">▶ Start Camera</button>
+          <button class="btn-stop" id="btn-stop" onclick="stopCamera()" style="display:none; flex:1;">⏹ Stop</button>
+        </div>
+      </div>
+
+      <!-- Right: result -->
+      <div>
+        <p class="section-label">Live Detection Result</p>
+        <div class="result-card is-analyzing" id="rt-card">
+          <div class="result-label analyzing" id="rt-label">WAITING</div>
+          <div class="result-confidence" id="rt-conf">Start camera to begin</div>
+          <div class="conf-bar-wrap"><div class="conf-bar analyzing" id="rt-bar" style="width:0%"></div></div>
+          <div class="result-meta">
+            <span class="meta-pill" id="rt-face-pill">👁 No face detected</span>
+            <span class="meta-pill" id="rt-buf-pill">🔄 Buffer: 0/20</span>
+          </div>
+        </div>
+
+        <div style="margin-top:20px; padding:16px; background:var(--bg2); border-radius:12px; border:1px solid var(--border);">
+          <p style="font-size:13px; color:var(--muted); line-height:1.6;">
+            <strong style="color:var(--text);">How it works:</strong><br>
+            Frames are captured every 600ms. Faces are detected using HOG and added to a rolling 20-frame buffer. The <strong style="color:var(--accent2);">InceptionNet + GRU</strong> model analyzes temporal patterns across the sequence to determine if the face is <span style="color:var(--real);">REAL</span> or <span style="color:var(--fake);">AI-generated (DEEPFAKE)</span>.
+          </p>
+        </div>
+      </div>
     </div>
   </div>
-</nav>
 
-<!-- ═══════════════════════════════ PAGES ════════════════════════════════ -->
-<main>
-
-  <!-- ── HOME PAGE ── -->
-  <section class="page active" id="page-home">
-    <div class="hero">
-      <img src="/static/hero.jpg" alt="DeepGuard AI banner" class="hero-img" />
-      <div class="hero-overlay">
-        <div class="hero-content">
-          <div class="hero-badge">AI-Powered Detection</div>
-          <h1 class="hero-title">DeepGuard</h1>
-          <p class="hero-subtitle">Advanced deepfake detection powered by EfficientNet-B0 and Grad-CAM explainability</p>
-          <div class="hero-btns">
-            <button class="btn btn-primary" id="heroImageBtn">Analyze Image</button>
-            <button class="btn btn-outline" id="heroVideoBtn">Analyze Video</button>
-          </div>
+  <!-- ══ IMAGE PANEL ══════════════════════════════════════════════════ -->
+  <div class="panel" id="panel-image">
+    <div class="card-grid">
+      <div>
+        <p class="section-label">Upload Image</p>
+        <div class="upload-zone" id="img-drop-zone">
+          <input type="file" id="img-file-input" accept="image/*" onchange="onImageSelect(this)" />
+          <div class="upload-icon">🖼️</div>
+          <p><strong>Drag &amp; drop</strong> or click to upload</p>
+          <p id="img-fname" style="margin-top:8px; color:var(--accent2); font-size:13px;"></p>
+          <p>Supports JPG, PNG, WebP</p>
         </div>
+        <div id="img-preview-wrap" style="display:none; margin-top:16px;">
+          <p class="section-label">Preview</p>
+          <div class="video-preview"><img id="img-preview" src="" alt="Preview" /></div>
+        </div>
+        <button class="btn btn-primary" id="btn-img-analyze" onclick="analyzeImage()" style="display:none;" disabled>🔍 Analyze Image</button>
+      </div>
+
+      <div>
+        <p class="section-label">Detection Result</p>
+        <div class="result-card is-analyzing" id="img-card">
+          <div class="result-label analyzing" id="img-label">IDLE</div>
+          <div class="result-confidence" id="img-conf">Upload an image to begin</div>
+          <div class="conf-bar-wrap"><div class="conf-bar analyzing" id="img-bar" style="width:0%"></div></div>
+          <div class="result-meta" id="img-meta"></div>
+        </div>
+        <img id="img-face-crop" class="face-crop-img" style="display:none;" src="" alt="Detected Face" />
       </div>
     </div>
-
-    <div class="container section">
-      <div class="section-label">How it works</div>
-      <h2 class="section-title">Three-step verification pipeline</h2>
-      <div class="cards-grid">
-        <div class="card card-glow">
-          <div class="card-icon">🔬</div>
-          <h3>Face Detection</h3>
-          <p>MTCNN precisely locates and crops faces from your image or video frames.</p>
-        </div>
-        <div class="card card-glow">
-          <div class="card-icon">🧠</div>
-          <h3>Deep Analysis</h3>
-          <p>EfficientNet-B0 (pretrained on ImageNet) classifies each face as REAL or DEEPFAKE.</p>
-        </div>
-        <div class="card card-glow">
-          <div class="card-icon">🔍</div>
-          <h3>Explainability</h3>
-          <p>Grad-CAM heatmaps highlight the exact regions that influenced the model's decision.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="container section">
-      <div class="section-label">Capabilities</div>
-      <h2 class="section-title">What DeepGuard can do</h2>
-      <div class="features-grid">
-        <div class="feature">
-          <span class="feature-icon">🖼️</span>
-          <div>
-            <h4>Image Detection</h4>
-            <p>Upload any JPG/PNG and get an instant REAL/DEEPFAKE verdict with confidence score.</p>
-          </div>
-        </div>
-        <div class="feature">
-          <span class="feature-icon">🎥</span>
-          <div>
-            <h4>Video Analysis</h4>
-            <p>Samples up to 20 evenly-spaced frames, analyzes each face, and aggregates predictions.</p>
-          </div>
-        </div>
-        <div class="feature">
-          <span class="feature-icon">📊</span>
-          <div>
-            <h4>Probability Scores</h4>
-            <p>Granular real and fake probability bars, not just binary labels.</p>
-          </div>
-        </div>
-        <div class="feature">
-          <span class="feature-icon">⚡</span>
-          <div>
-            <h4>Hardware Acceleration</h4>
-            <p>Automatically uses CUDA, MPS (Apple Silicon), or CPU — whichever is fastest.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="disclaimer container">
-      ⚠️ <strong>Disclaimer:</strong> DeepGuard provides an AI-based estimate and should not be treated as definitive forensic evidence. Results may vary depending on compression, lighting, and manipulation techniques.
-    </div>
-  </section>
-
-  <!-- ── IMAGE DETECTION PAGE ── -->
-  <section class="page" id="page-image">
-    <div class="container section">
-      <div class="section-label">Image Analysis</div>
-      <h2 class="section-title">Detect deepfakes in images</h2>
-      <p class="section-desc">Upload a JPG, JPEG, or PNG image. The model will detect faces and classify the image as REAL or DEEPFAKE.</p>
-
-      <div class="upload-zone" id="imageDropZone">
-        <input type="file" id="imageFileInput" accept=".jpg,.jpeg,.png" hidden />
-        <div class="upload-icon">📸</div>
-        <p class="upload-title">Drop your image here</p>
-        <p class="upload-hint">or click to browse — JPG, JPEG, PNG</p>
-        <button class="btn btn-primary" id="imageBrowseBtn" type="button">Choose Image</button>
-      </div>
-
-      <div class="preview-row" id="imagePreviewRow" style="display:none">
-        <div class="preview-box">
-          <h3 class="box-label">Uploaded Image</h3>
-          <img id="imagePreview" alt="Uploaded image" />
-        </div>
-      </div>
-
-      <div class="analyze-row" id="imageAnalyzeRow" style="display:none">
-        <button class="btn btn-primary btn-lg" id="imageAnalyzeBtn">
-          <span id="imageAnalyzeBtnText">🔍 Analyze Image</span>
-          <span id="imageAnalyzeSpinner" class="spinner" style="display:none"></span>
-        </button>
-      </div>
-
-      <div id="imageResults" style="display:none">
-        <div class="result-card" id="imageResultCard">
-          <div class="result-verdict" id="imageVerdict"></div>
-          <div class="result-confidence" id="imageConfidence"></div>
-          <div class="prob-bars">
-            <div class="prob-row">
-              <span class="prob-label">✅ Real</span>
-              <div class="prob-track">
-                <div class="prob-fill prob-real" id="imageRealBar"></div>
-              </div>
-              <span class="prob-value" id="imageRealVal"></span>
-            </div>
-            <div class="prob-row">
-              <span class="prob-label">🚨 Fake</span>
-              <div class="prob-track">
-                <div class="prob-fill prob-fake" id="imageFakeBar"></div>
-              </div>
-              <span class="prob-value" id="imageFakeVal"></span>
-            </div>
-          </div>
-        </div>
-
-        <div class="explainability-row" id="imageExplainRow" style="display:none">
-          <div class="preview-box">
-            <h3 class="box-label">Detected Face</h3>
-            <img id="imageFaceCrop" alt="Detected face" />
-          </div>
-          <div class="preview-box">
-            <h3 class="box-label">Grad-CAM Heatmap</h3>
-            <img id="imageHeatmap" alt="Grad-CAM heatmap" />
-            <p class="hint-text">Highlighted regions influenced the prediction</p>
-          </div>
-        </div>
-      </div>
-
-      <div id="imageError" class="error-box" style="display:none"></div>
-    </div>
-  </section>
-
-  <!-- ── VIDEO DETECTION PAGE ── -->
-  <section class="page" id="page-video">
-    <div class="container section">
-      <div class="section-label">Video Analysis</div>
-      <h2 class="section-title">Detect deepfakes in videos</h2>
-      <p class="section-desc">Upload an MP4, AVI, or MOV file. DeepGuard samples 20 evenly-spaced frames and aggregates predictions.</p>
-
-      <div class="upload-zone" id="videoDropZone">
-        <input type="file" id="videoFileInput" accept=".mp4,.avi,.mov" hidden />
-        <div class="upload-icon">🎬</div>
-        <p class="upload-title">Drop your video here</p>
-        <p class="upload-hint">or click to browse — MP4, AVI, MOV</p>
-        <button class="btn btn-primary" id="videoBrowseBtn" type="button">Choose Video</button>
-      </div>
-
-      <div class="preview-row" id="videoPreviewRow" style="display:none">
-        <div class="preview-box preview-box-wide">
-          <h3 class="box-label">Selected Video</h3>
-          <video id="videoPreview" controls></video>
-        </div>
-      </div>
-
-      <div class="analyze-row" id="videoAnalyzeRow" style="display:none">
-        <button class="btn btn-primary btn-lg" id="videoAnalyzeBtn">
-          <span id="videoAnalyzeBtnText">🔍 Analyze Video</span>
-          <span id="videoAnalyzeSpinner" class="spinner" style="display:none"></span>
-        </button>
-        <p class="hint-text">This may take 30–60 seconds depending on your hardware.</p>
-      </div>
-
-      <div id="videoResults" style="display:none">
-        <div class="result-card" id="videoResultCard">
-          <div class="result-verdict" id="videoVerdict"></div>
-          <div class="result-confidence" id="videoConfidence"></div>
-          <div class="video-stats" id="videoStats"></div>
-          <div class="prob-bars">
-            <div class="prob-row">
-              <span class="prob-label">✅ Real</span>
-              <div class="prob-track">
-                <div class="prob-fill prob-real" id="videoRealBar"></div>
-              </div>
-              <span class="prob-value" id="videoRealVal"></span>
-            </div>
-            <div class="prob-row">
-              <span class="prob-label">🚨 Fake</span>
-              <div class="prob-track">
-                <div class="prob-fill prob-fake" id="videoFakeBar"></div>
-              </div>
-              <span class="prob-value" id="videoFakeVal"></span>
-            </div>
-          </div>
-        </div>
-
-        <div id="videoFramesSection">
-          <h3 class="subsection-title">Frame-Level Analysis</h3>
-          <div class="table-wrapper">
-            <table class="frame-table" id="frameTable">
-              <thead>
-                <tr>
-                  <th>Frame #</th>
-                  <th>Timestamp</th>
-                  <th>Prediction</th>
-                  <th>Real %</th>
-                  <th>Fake %</th>
-                </tr>
-              </thead>
-              <tbody id="frameTableBody"></tbody>
-            </table>
-          </div>
-
-          <div id="suspiciousFramesSection" style="display:none">
-            <h3 class="subsection-title">Suspicious Frames</h3>
-            <div class="suspicious-grid" id="suspiciousGrid"></div>
-          </div>
-        </div>
-      </div>
-
-      <div id="videoError" class="error-box" style="display:none"></div>
-    </div>
-  </section>
-
-</main>
-
-<!-- ════════════════════════════════ FOOTER ═════════════════════════════ -->
-<footer class="footer">
-  <div class="container footer-inner">
-    <span>🛡️ <strong>DeepGuard</strong> — AI-Powered Deepfake Detection</span>
-    <span>EfficientNet-B0 · Grad-CAM · FastAPI · PyTorch</span>
   </div>
-</footer>
 
-<script src="/static/app.js"></script>
+  <!-- ══ VIDEO PANEL ══════════════════════════════════════════════════ -->
+  <div class="panel" id="panel-video">
+    <div class="card-grid">
+      <div>
+        <p class="section-label">Upload Video</p>
+        <div class="upload-zone" id="vid-drop-zone">
+          <input type="file" id="vid-file-input" accept="video/*" onchange="onVideoSelect(this)" />
+          <div class="upload-icon">🎬</div>
+          <p><strong>Drag &amp; drop</strong> or click to upload</p>
+          <p id="vid-fname" style="margin-top:8px; color:var(--accent2); font-size:13px;"></p>
+          <p>Supports MP4, AVI, MOV, WebM</p>
+        </div>
+        <div id="vid-preview-wrap" style="display:none; margin-top:16px;">
+          <p class="section-label">Preview</p>
+          <div class="video-preview">
+            <video id="vid-preview" controls preload="metadata"></video>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-vid-analyze" onclick="analyzeVideo()" style="display:none;" disabled>🔍 Analyze Video</button>
+      </div>
+
+      <div>
+        <p class="section-label">Detection Result</p>
+        <div class="result-card is-analyzing" id="vid-card">
+          <div class="result-label analyzing" id="vid-label">IDLE</div>
+          <div class="result-confidence" id="vid-conf">Upload a video to begin</div>
+          <div class="conf-bar-wrap"><div class="conf-bar analyzing" id="vid-bar" style="width:0%"></div></div>
+          <div class="result-meta" id="vid-meta"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info cards -->
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="icon">🧠</div>
+      <h3>InceptionNet + GRU</h3>
+      <p>CNN extracts spatial features per frame; GRU models temporal patterns across the 20-frame sequence.</p>
+    </div>
+    <div class="info-item">
+      <div class="icon">🎯</div>
+      <h3>20-Frame Sequences</h3>
+      <p>Temporal artifacts in deepfakes — like unnatural blinking or flickering — are caught across multiple frames.</p>
+    </div>
+    <div class="info-item">
+      <div class="icon">⚡</div>
+      <h3>Real-Time Analysis</h3>
+      <p>Live webcam frames are processed continuously with a rolling buffer that keeps detection fresh and accurate.</p>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ── Utility ───────────────────────────────────────────────────────────────────
+function setResult(prefix, label, confidence, cls, confText, meta=[]) {
+  const card = document.getElementById(prefix + '-card');
+  const lbl  = document.getElementById(prefix + '-label');
+  const conf = document.getElementById(prefix + '-conf');
+  const bar  = document.getElementById(prefix + '-bar');
+  const metaEl = document.getElementById(prefix + '-meta');
+
+  lbl.textContent = label;
+  const c = cls === 'real' ? 'real' : cls === 'fake' ? 'fake' : 'analyzing';
+  lbl.className = 'result-label ' + c;
+  conf.textContent = confText;
+  bar.style.width = confidence + '%';
+  bar.className = 'conf-bar ' + c;
+  card.className = 'result-card is-' + (c === 'analyzing' ? 'analyzing' : c);
+
+  if (metaEl) {
+    metaEl.innerHTML = meta.map(m => `<span class="meta-pill">${m}</span>`).join('');
+  }
+}
+
+// ── Tab Switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab !== 'realtime') stopCamera();
+}
+
+// ── Model Status Check ────────────────────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const data = await r.json();
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (data.status === 'ok') {
+      dot.className = 'status-dot ok';
+      txt.textContent = data.model || 'Model loaded and ready';
+    } else {
+      dot.className = 'status-dot err';
+      txt.textContent = 'Model unavailable: ' + data.message;
+    }
+  } catch(e) {
+    document.getElementById('status-text').textContent = 'Server unreachable';
+  }
+}
+checkStatus();
+
+// ── Real-Time Webcam ──────────────────────────────────────────────────────────
+let stream = null;
+let analyzeInterval = null;
+let isSendingFrame = false;
+const CIRCUMFERENCE = 125.66;
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
+    document.getElementById('webcam-video').srcObject = stream;
+    document.getElementById('wc-placeholder').style.display = 'none';
+    document.getElementById('wc-wrapper').style.display = 'block';
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display = '';
+
+    await fetch('/api/realtime/reset', { method: 'POST' });
+    setResult('rt', 'SCANNING', 0, 'analyzing', 'Looking for face…');
+
+    analyzeInterval = setInterval(sendFrame, 600);
+  } catch(e) {
+    alert('Camera access denied: ' + e.message);
+  }
+}
+
+function stopCamera() {
+  if (analyzeInterval) { clearInterval(analyzeInterval); analyzeInterval = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  document.getElementById('wc-placeholder').style.display = 'flex';
+  document.getElementById('wc-wrapper').style.display = 'none';
+  document.getElementById('btn-start').style.display = '';
+  document.getElementById('btn-stop').style.display = 'none';
+  setResult('rt', 'WAITING', 0, 'analyzing', 'Start camera to begin');
+}
+
+const _canvas = document.createElement('canvas');
+const _ctx = _canvas.getContext('2d');
+
+async function sendFrame() {
+  if (isSendingFrame) return;
+  const video = document.getElementById('webcam-video');
+  if (!video || !video.srcObject) return;
+
+  _canvas.width = 320; _canvas.height = 240;
+  _ctx.save();
+  _ctx.translate(_canvas.width, 0);
+  _ctx.scale(-1, 1);
+  _ctx.drawImage(video, 0, 0, _canvas.width, _canvas.height);
+  _ctx.restore();
+
+  const dataUrl = _canvas.toDataURL('image/jpeg', 0.6);
+  isSendingFrame = true;
+  try {
+    const resp = await fetch('/api/realtime/frame', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frame: dataUrl })
+    });
+    const data = await resp.json();
+    updateRealtimeUI(data);
+  } catch(e) {
+    console.warn('sendFrame error', e);
+  } finally {
+    isSendingFrame = false;
+  }
+}
+
+function updateRealtimeUI(data) {
+  const faceBadge = document.getElementById('face-badge');
+  if (data.face_detected) {
+    faceBadge.textContent = '✅ Face Detected';
+    faceBadge.className = 'face-badge detected';
+  } else {
+    faceBadge.textContent = '❌ No Face';
+    faceBadge.className = 'face-badge none';
+  }
+
+  const buf = Math.min(data.buffer_size || 0, 20);
+  document.getElementById('buffer-arc').style.strokeDashoffset = CIRCUMFERENCE * (1 - buf / 20);
+  document.getElementById('rt-face-pill').textContent = data.face_detected ? '👁 Face detected' : '👁 No face';
+  document.getElementById('rt-buf-pill').textContent = `🔄 Buffer: ${buf}/20`;
+
+  if (!data.ready) {
+    setResult('rt', 'SCANNING', 0, 'analyzing', `Collecting frames… ${buf}/20`);
+    return;
+  }
+
+  const cls = data.label === 'REAL' ? 'real' : data.label === 'DEEPFAKE' ? 'fake' : 'analyzing';
+  setResult('rt', data.label, data.confidence, cls,
+    `Confidence: ${data.confidence}%  ·  Fake: ${data.fake_probability}%  ·  Real: ${data.real_probability}%`);
+}
+
+// ── Image Upload ──────────────────────────────────────────────────────────────
+let imageFile = null;
+
+function onImageSelect(input) {
+  if (!input.files[0]) return;
+  imageFile = input.files[0];
+  document.getElementById('img-fname').textContent = '✅ ' + imageFile.name;
+  const url = URL.createObjectURL(imageFile);
+  document.getElementById('img-preview').src = url;
+  document.getElementById('img-preview-wrap').style.display = 'block';
+  document.getElementById('btn-img-analyze').style.display = '';
+  document.getElementById('btn-img-analyze').disabled = false;
+  document.getElementById('img-face-crop').style.display = 'none';
+  setResult('img', 'READY', 0, 'analyzing', 'Click Analyze to run detection');
+}
+
+const imgDrop = document.getElementById('img-drop-zone');
+imgDrop.addEventListener('dragover', e => { e.preventDefault(); imgDrop.classList.add('dragover'); });
+imgDrop.addEventListener('dragleave', () => imgDrop.classList.remove('dragover'));
+imgDrop.addEventListener('drop', e => {
+  e.preventDefault(); imgDrop.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) { document.getElementById('img-file-input').files = e.dataTransfer.files; onImageSelect(document.getElementById('img-file-input')); }
+});
+
+async function analyzeImage() {
+  if (!imageFile) return;
+  const btn = document.getElementById('btn-img-analyze');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Analyzing…';
+  setResult('img', 'ANALYZING', 0, 'analyzing', 'Detecting face and running model…');
+  document.getElementById('img-face-crop').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', imageFile);
+  try {
+    const resp = await fetch('/api/detect/image', { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    const cls = data.prediction === 'REAL' ? 'real' : 'fake';
+    const meta = [
+      `🎯 Fake: ${data.fake_probability}%`,
+      `✅ Real: ${data.real_probability}%`,
+      data.face_detected ? '👁 Face detected' : '⚠️ No face — used center crop',
+    ];
+    if (data.warning) meta.push('⚠️ ' + data.warning);
+
+    setResult('img', data.prediction, data.confidence, cls,
+      `Confidence: ${data.confidence}%`, meta);
+
+    if (data.face_crop_b64) {
+      const crop = document.getElementById('img-face-crop');
+      crop.src = 'data:image/jpeg;base64,' + data.face_crop_b64;
+      crop.style.display = 'block';
+    }
+  } catch(e) {
+    setResult('img', 'ERROR', 0, 'analyzing', 'Request failed. Is the server running?');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🔍 Analyze Image';
+  }
+}
+
+// ── Video Upload ──────────────────────────────────────────────────────────────
+let videoFile = null;
+
+function onVideoSelect(input) {
+  if (!input.files[0]) return;
+  videoFile = input.files[0];
+  document.getElementById('vid-fname').textContent = '✅ ' + videoFile.name;
+  const url = URL.createObjectURL(videoFile);
+  document.getElementById('vid-preview').src = url;
+  document.getElementById('vid-preview-wrap').style.display = 'block';
+  document.getElementById('btn-vid-analyze').style.display = '';
+  document.getElementById('btn-vid-analyze').disabled = false;
+  setResult('vid', 'READY', 0, 'analyzing', 'Click Analyze to run detection');
+}
+
+const vidDrop = document.getElementById('vid-drop-zone');
+vidDrop.addEventListener('dragover', e => { e.preventDefault(); vidDrop.classList.add('dragover'); });
+vidDrop.addEventListener('dragleave', () => vidDrop.classList.remove('dragover'));
+vidDrop.addEventListener('drop', e => {
+  e.preventDefault(); vidDrop.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f) { document.getElementById('vid-file-input').files = e.dataTransfer.files; onVideoSelect(document.getElementById('vid-file-input')); }
+});
+
+async function analyzeVideo() {
+  if (!videoFile) return;
+  const btn = document.getElementById('btn-vid-analyze');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Analyzing…';
+  setResult('vid', 'ANALYZING', 0, 'analyzing', 'Sampling frames and detecting faces…');
+
+  const fd = new FormData();
+  fd.append('file', videoFile);
+  try {
+    const resp = await fetch('/api/detect/video', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (resp.status !== 200) {
+      setResult('vid', 'ERROR', 0, 'analyzing', data.detail || 'Analysis failed.');
+      return;
+    }
+    const cls = data.final_prediction === 'REAL' ? 'real' : 'fake';
+    const meta = [
+      `🎯 Fake: ${data.fake_probability}%`,
+      `✅ Real: ${data.real_probability}%`,
+      `🎞️ ${data.frames_analyzed} frames analyzed`,
+    ];
+    setResult('vid', data.final_prediction, data.confidence, cls,
+      `Confidence: ${data.confidence}%`, meta);
+  } catch(e) {
+    setResult('vid', 'ERROR', 0, 'analyzing', 'Request failed. Is the server running?');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🔍 Analyze Video';
+  }
+}
+</script>
 </body>
 </html>

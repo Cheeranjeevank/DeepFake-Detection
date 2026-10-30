@@ -11,7 +11,7 @@ class DeepfakeDataset(Dataset):
         self.image_paths = []
         self.labels = []
         
-        self.class_to_idx = {"real": 0, "fake": 1}
+        self.class_to_idx = {"fake": 0, "real": 1}
         
         for class_name in self.class_to_idx.keys():
             class_dir = self.data_dir / class_name

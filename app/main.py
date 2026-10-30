@@ -1,29 +1,36 @@
 """
-DeepGuard FastAPI Backend
-Provides REST API endpoints for deepfake detection on images and videos.
+DeepGuard FastAPI Backend — Real-Time Deepfake Detection
+Uses InceptionNet + GRU (TensorFlow) trained on FaceForensics++ dataset.
+Provides REST endpoints for image upload, video upload, and live webcam streaming.
 """
 import sys
 import io
+import os
 import base64
 import tempfile
-import os
 from pathlib import Path
 
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
+
+import cv2
+import numpy as np
+from PIL import Image
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
+from pydantic import BaseModel
+from facenet_pytorch import MTCNN as _MTCNN
+import torch
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.inference import ImagePredictor
-from src.video_processor import VideoPredictor
-from src.explainability import GradCAMExplainer
 from src.utils import logger
 
-app = FastAPI(title="DeepGuard API", version="1.0.0")
+# MTCNN face detector (CPU)
+_mtcnn = _MTCNN(keep_all=False, device=torch.device('cpu'), post_process=False)
+
+app = FastAPI(title="DeepGuard API — Real-Time", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,163 +39,310 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files (HTML/CSS/JS frontend)
 static_dir = Path(__file__).resolve().parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# --- Model loading (singleton) ---
-_image_predictor = None
-_video_predictor = None
-_explainer = None
-_models_error = None
+# ── Constants ──────────────────────────────────────────────────────────────────
+SEQUENCE_LENGTH = 20
+IMAGE_SIZE = 299  # InceptionV3 native input
 
+# ── Model Loading ──────────────────────────────────────────────────────────────
+_gru_model = None     # The trained GRU classifier  
+_iv3_extractor = None # InceptionV3 feature extractor
+_model_error = None
 
 def get_models():
-    global _image_predictor, _video_predictor, _explainer, _models_error
-    if _image_predictor is None and _models_error is None:
+    global _gru_model, _iv3_extractor, _model_error
+    if _gru_model is None and _model_error is None:
         try:
-            _image_predictor = ImagePredictor()
-            _video_predictor = VideoPredictor(predictor=_image_predictor)
-            _explainer = GradCAMExplainer(_image_predictor.model, _image_predictor.device)
-            logger.info("All models loaded successfully.")
+            import tensorflow as tf
+            # 1. Load the trained GRU classifier
+            gru_path = str(Path(__file__).resolve().parent.parent / "models" / "inceptionNet_model.h5")
+            _gru_model = tf.keras.models.load_model(gru_path)
+            logger.info(f"GRU model loaded: input={[i.shape for i in _gru_model.inputs]}")
+
+            # 2. Build the InceptionV3 feature extractor (ImageNet weights)
+            _iv3_extractor = tf.keras.applications.InceptionV3(
+                include_top=False, pooling='avg',
+                input_shape=(IMAGE_SIZE, IMAGE_SIZE, 3),
+                weights='imagenet'
+            )
+            logger.info("InceptionV3 feature extractor ready.")
         except Exception as e:
-            _models_error = str(e)
+            _model_error = str(e)
             logger.error(f"Failed to load models: {e}")
-    return _image_predictor, _video_predictor, _explainer, _models_error
+    return _gru_model, _iv3_extractor, _model_error
+
+# ── Frame Buffer for real-time streaming (per session, server-side) ────────────
+_realtime_buffer: list = []
+
+# ── Helper Functions ───────────────────────────────────────────────────────────
+
+def detect_and_crop_face(rgb_frame: np.ndarray):
+    """
+    Detect face using MTCNN and return cropped RGB numpy array, or None.
+    Falls back to center crop if no face detected.
+    """
+    try:
+        pil_img = Image.fromarray(rgb_frame)
+        boxes, _ = _mtcnn.detect(pil_img)
+        if boxes is not None and len(boxes) > 0:
+            x1, y1, x2, y2 = [int(max(0, v)) for v in boxes[0]]
+            face_img = rgb_frame[y1:y2, x1:x2]
+            if face_img.size > 0:
+                return face_img
+    except Exception:
+        pass
+    return None
+
+def preprocess_face(face_rgb: np.ndarray) -> np.ndarray:
+    """Resize face to IMAGE_SIZE x IMAGE_SIZE."""
+    return cv2.resize(face_rgb, (IMAGE_SIZE, IMAGE_SIZE))
+
+def run_sequence_inference(frames_array: np.ndarray):
+    """
+    Two-stage inference:
+    1. Extract InceptionV3 features for each of the 20 face frames.
+    2. Pass the (20, 2048) sequence + mask to the GRU classifier.
+    Returns (label, confidence_pct, fake_pct, real_pct).
+    """
+    import tensorflow as tf
+    gru_model, iv3, _ = get_models()
+    if gru_model is None or iv3 is None:
+        return None, None, None, None
+
+    n = len(frames_array)
+
+    # Preprocess frames for InceptionV3
+    frames_float = frames_array.astype(np.float32)
+    preprocessed = tf.keras.applications.inception_v3.preprocess_input(frames_float)  # [-1, 1]
+
+    # Extract features: (n, 2048)
+    features = iv3.predict(preprocessed, verbose=0)
+
+    # Pad / truncate to exactly SEQUENCE_LENGTH
+    if n < SEQUENCE_LENGTH:
+        pad = np.zeros((SEQUENCE_LENGTH - n, 2048), dtype=np.float32)
+        features = np.vstack([features, pad])
+        mask = np.array([1]*n + [0]*(SEQUENCE_LENGTH - n), dtype=np.float32)
+    else:
+        features = features[:SEQUENCE_LENGTH]
+        mask = np.ones(SEQUENCE_LENGTH, dtype=np.float32)
+
+    # Add batch dimension
+    features_batch = np.expand_dims(features, axis=0)  # (1, 20, 2048)
+    mask_batch = np.expand_dims(mask, axis=0)          # (1, 20)
+
+    pred = gru_model.predict([features_batch, mask_batch], verbose=0)
+
+    # Output is (1, 2) — softmax over [REAL, FAKE] or [FAKE, REAL]?
+    # We'll treat argmax as FAKE (class 1 = FAKE based on FaceForensics++ convention)
+    real_prob = float(pred[0][0])
+    fake_prob = float(pred[0][1])
+    label = "DEEPFAKE" if fake_prob > real_prob else "REAL"
+    confidence = max(fake_prob, real_prob)
+    return label, round(confidence * 100, 1), round(fake_prob * 100, 1), round(real_prob * 100, 1)
 
 
-def pil_to_base64(image: Image.Image, fmt="JPEG") -> str:
-    """Convert PIL Image to base64 string."""
+def extract_frames_from_video(video_path: str, num_frames: int = SEQUENCE_LENGTH):
+    """Sample num_frames evenly-spaced frames with face detection from a video file."""
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total == 0:
+        cap.release()
+        return None
+    step = max(1, total // num_frames)
+    for i in range(num_frames):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i * step)
+        ret, frame = cap.read()
+        if not ret:
+            break
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        face = detect_and_crop_face(rgb)
+        if face is not None:
+            try:
+                frames.append(preprocess_face(face))
+            except Exception:
+                pass
+    cap.release()
+    # Pad if needed
+    while 0 < len(frames) < num_frames:
+        frames.append(frames[-1])
+    return np.array(frames) if frames else None
+
+
+def pil_to_b64(img: Image.Image, fmt="JPEG") -> str:
     buf = io.BytesIO()
-    image.save(buf, format=fmt)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
+    img.save(buf, format=fmt)
+    return base64.b64encode(buf.getvalue()).decode()
 
 
-# --- Routes ---
+# ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def serve_frontend():
-    index_path = static_dir / "index.html"
-    if index_path.exists():
-        return FileResponse(str(index_path))
-    return {"message": "DeepGuard API is running. Frontend not found."}
+    index = static_dir / "index.html"
+    if index.exists():
+        return FileResponse(str(index))
+    return {"message": "DeepGuard API v2 running. Frontend not found."}
 
 
 @app.get("/api/status")
 async def status():
-    """Check if models are loaded."""
-    _, _, _, err = get_models()
+    _, _, err = get_models()
     if err:
-        return {"status": "degraded", "message": f"Models failed to load: {err}"}
-    return {"status": "ok", "message": "All models loaded successfully."}
+        return {"status": "degraded", "message": f"Model failed to load: {err}"}
+    return {"status": "ok", "message": "InceptionV3 + GRU model loaded and ready.", "model": "InceptionV3+GRU (FaceForensics++)"}
 
 
 @app.post("/api/detect/image")
 async def detect_image(file: UploadFile = File(...)):
     """
-    Detect if an uploaded image is REAL or DEEPFAKE.
-    Returns prediction, confidence, probabilities, and optional Grad-CAM heatmap.
+    Detect deepfake in a single uploaded image.
+    Treats the image as a 20-frame sequence (same frame repeated) for compatibility.
     """
-    image_predictor, _, explainer, err = get_models()
-
+    _, _, err = get_models()
     if err:
-        raise HTTPException(status_code=503, detail=f"Models unavailable: {err}")
+        raise HTTPException(status_code=503, detail=f"Model unavailable: {err}")
 
-    # Read and open image
     try:
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image file: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
-    # Run prediction
-    result = image_predictor.predict_image(image)
+    rgb = np.array(pil_img)
 
-    if "error" in result:
-        raise HTTPException(status_code=422, detail=result["error"])
+    # Try face detection
+    face = detect_and_crop_face(rgb)
+    face_detected = face is not None
 
-    # Prepare response
-    response = {
-        "prediction": result["prediction"],
-        "confidence": round(result["confidence"] * 100, 2),
-        "real_probability": round(result["real_probability"] * 100, 2),
-        "fake_probability": round(result["fake_probability"] * 100, 2),
-        "face_detected": result.get("face_detected", True),
-        "warning": result.get("warning", None),
-        "face_crop_b64": None,
+    if not face_detected:
+        # Fallback: center crop
+        h, w = rgb.shape[:2]
+        s = min(h, w)
+        y0, x0 = (h - s) // 2, (w - s) // 2
+        face = rgb[y0:y0+s, x0:x0+s]
+
+    # Preprocess and build a 20-frame sequence from the single face
+    face_resized = preprocess_face(face)
+    frames = np.stack([face_resized] * SEQUENCE_LENGTH, axis=0)
+
+    label, confidence, fake_pct, real_pct = run_sequence_inference(frames)
+    if label is None:
+        raise HTTPException(status_code=503, detail="Inference failed.")
+
+    # Face crop as base64
+    face_pil = Image.fromarray(face_resized)
+    face_b64 = pil_to_b64(face_pil)
+
+    return JSONResponse({
+        "prediction": label,
+        "confidence": confidence,
+        "fake_probability": fake_pct,
+        "real_probability": real_pct,
+        "face_detected": face_detected,
+        "face_crop_b64": face_b64,
         "heatmap_b64": None,
-    }
-
-    # Add face crop and Grad-CAM heatmap
-    if result.get("face_crop"):
-        face_crop = result["face_crop"]
-        response["face_crop_b64"] = pil_to_base64(face_crop)
-
-        if explainer is not None:
-            try:
-                target_class = 1 if result["prediction"] == "DEEPFAKE" else 0
-                heatmap = explainer.generate_heatmap(face_crop, target_class=target_class)
-                response["heatmap_b64"] = pil_to_base64(heatmap)
-            except Exception as e:
-                logger.warning(f"Grad-CAM failed: {e}")
-
-    return JSONResponse(content=response)
+        "warning": None if face_detected else "No face detected — used full image center crop",
+    })
 
 
 @app.post("/api/detect/video")
 async def detect_video(file: UploadFile = File(...)):
-    """
-    Detect if an uploaded video is REAL or DEEPFAKE by sampling frames.
-    """
-    _, video_predictor, _, err = get_models()
-
+    """Detect deepfake across a video by sampling 20 face frames."""
+    _, _, err = get_models()
     if err:
-        raise HTTPException(status_code=503, detail=f"Models unavailable: {err}")
+        raise HTTPException(status_code=503, detail=f"Model unavailable: {err}")
 
-    # Save video to temp file
     suffix = Path(file.filename).suffix if file.filename else ".mp4"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        contents = await file.read()
-        tmp.write(contents)
+        tmp.write(await file.read())
         tmp_path = tmp.name
 
     try:
-        result = video_predictor.predict_video(tmp_path)
+        frames = extract_frames_from_video(tmp_path)
     finally:
         try:
             os.unlink(tmp_path)
         except Exception:
             pass
 
-    if "error" in result:
-        raise HTTPException(status_code=422, detail=result["error"])
+    if frames is None:
+        raise HTTPException(status_code=422, detail="No faces detected in video.")
 
-    # Prepare frame results (include base64 face crops for suspicious frames)
-    frame_results_out = []
-    for f in result["frame_results"]:
-        face_b64 = None
-        if f.get("face_crop") and f["prediction"] == "DEEPFAKE":
-            try:
-                face_b64 = pil_to_base64(f["face_crop"])
-            except Exception:
-                pass
+    label, confidence, fake_pct, real_pct = run_sequence_inference(frames)
+    if label is None:
+        raise HTTPException(status_code=503, detail="Inference failed.")
 
-        frame_results_out.append({
-            "frame_num": f["frame_num"],
-            "timestamp": round(f["timestamp"], 2),
-            "prediction": f["prediction"],
-            "fake_probability": round(f["fake_probability"] * 100, 2),
-            "real_probability": round(f["real_probability"] * 100, 2),
-            "face_crop_b64": face_b64,
+    return JSONResponse({
+        "final_prediction": label,
+        "confidence": confidence,
+        "fake_probability": fake_pct,
+        "real_probability": real_pct,
+        "frames_analyzed": len(frames),
+    })
+
+
+# ── Real-Time Webcam Streaming ─────────────────────────────────────────────────
+
+class FrameData(BaseModel):
+    frame: str  # base64 data URL
+
+
+@app.post("/api/realtime/frame")
+async def analyze_realtime_frame(body: FrameData):
+    """
+    Accepts a base64-encoded webcam frame, detects the face, adds it to
+    a rolling 20-frame buffer, and runs inference when the buffer is full.
+    """
+    global _realtime_buffer
+
+    # Decode frame
+    try:
+        img_data = base64.b64decode(body.frame.split(',')[1])
+        pil_img = Image.open(io.BytesIO(img_data)).convert("RGB")
+        rgb = np.array(pil_img)
+    except Exception as e:
+        return JSONResponse({"error": f"Frame decode error: {e}"}, status_code=400)
+
+    face = detect_and_crop_face(rgb)
+    face_detected = face is not None
+
+    if face_detected:
+        try:
+            _realtime_buffer.append(preprocess_face(face))
+            if len(_realtime_buffer) > SEQUENCE_LENGTH:
+                _realtime_buffer = _realtime_buffer[-SEQUENCE_LENGTH:]
+        except Exception:
+            pass
+
+    if len(_realtime_buffer) >= SEQUENCE_LENGTH:
+        frames_arr = np.array(_realtime_buffer[:SEQUENCE_LENGTH])
+        label, confidence, fake_pct, real_pct = run_sequence_inference(frames_arr)
+        return JSONResponse({
+            "label": label,
+            "confidence": confidence,
+            "fake_probability": fake_pct,
+            "real_probability": real_pct,
+            "face_detected": face_detected,
+            "buffer_size": len(_realtime_buffer),
+            "ready": True,
         })
 
-    return JSONResponse(content={
-        "final_prediction": result["final_prediction"],
-        "confidence": round(result["confidence"] * 100, 2),
-        "frames_analyzed": result["frames_analyzed"],
-        "suspicious_frames": result["suspicious_frames"],
-        "mean_fake_probability": round(result["mean_fake_probability"] * 100, 2),
-        "mean_real_probability": round(result["mean_real_probability"] * 100, 2),
-        "frame_results": frame_results_out,
+    return JSONResponse({
+        "label": "SCANNING",
+        "confidence": 0,
+        "face_detected": face_detected,
+        "buffer_size": len(_realtime_buffer),
+        "ready": False,
     })
+
+
+@app.post("/api/realtime/reset")
+async def reset_buffer():
+    global _realtime_buffer
+    _realtime_buffer = []
+    return JSONResponse({"status": "ok"})

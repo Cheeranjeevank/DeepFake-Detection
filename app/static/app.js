@@ -89,6 +89,60 @@ function onImageSelected(file) {
 
 setupDropZone('imageDropZone', 'imageFileInput', 'imageBrowseBtn', onImageSelected);
 
+// ── Webcam Logic ──
+let cameraStream = null;
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  $('cameraVideo').srcObject = null;
+  $('cameraZone').style.display = 'none';
+  $('imageDropZone').style.display = 'block';
+}
+
+$('cameraStartBtn').addEventListener('click', async (e) => {
+  e.stopPropagation();
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    $('cameraVideo').srcObject = cameraStream;
+    $('imageDropZone').style.display = 'none';
+    $('cameraZone').style.display = 'block';
+    
+    // Hide previous results
+    $('imagePreviewRow').style.display = 'none';
+    $('imageAnalyzeRow').style.display = 'none';
+    $('imageResults').style.display = 'none';
+    $('imageError').style.display = 'none';
+  } catch (err) {
+    alert("Camera access denied or unavailable: " + err.message);
+  }
+});
+
+$('cameraCancelBtn').addEventListener('click', () => {
+  stopCamera();
+});
+
+$('cameraCaptureBtn').addEventListener('click', () => {
+  if (!cameraStream) return;
+  const video = $('cameraVideo');
+  const canvas = $('cameraCanvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  
+  canvas.toBlob(blob => {
+    if (blob) {
+      const file = new File([blob], "camera_capture.jpg", { type: "image/jpeg" });
+      stopCamera();
+      onImageSelected(file);
+    }
+  }, "image/jpeg", 0.95);
+});
+
 $('imageAnalyzeBtn').addEventListener('click', async () => {
   if (!imageFile) return;
 

@@ -59,8 +59,8 @@ class ImagePredictor:
             probs = torch.softmax(outputs, dim=1).cpu().numpy()[0]
 
         # 4. Format Output
-        real_prob = float(probs[0])
-        fake_prob = float(probs[1])
+        fake_prob = float(probs[0])
+        real_prob = float(probs[1])
 
         if fake_prob > 0.5:
             prediction = "DEEPFAKE"

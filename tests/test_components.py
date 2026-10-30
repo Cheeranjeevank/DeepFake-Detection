@@ -26,8 +26,10 @@ def test_face_detection_no_face():
     # Create a blank image (no face)
     img = Image.new("RGB", (800, 600), color="black")
     
-    face = detector.detect_and_crop(img)
-    assert face is None
+    face, detected = detector.detect_and_crop(img)
+    assert not detected
+    assert face is not None
+    assert face.size == (600, 600)
 
 def test_model_output_shape():
     model = DeepfakeClassifier(num_classes=2, pretrained=False)
@@ -54,5 +56,7 @@ def test_image_predictor_inference():
     # It will fail face detection
     result = predictor.predict_image(img)
     
-    assert "error" in result
-    assert "No face detected" in result["error"]
+    assert "warning" in result
+    assert "No face was detected" in result["warning"]
+    assert "prediction" in result
+
